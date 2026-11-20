@@ -1,7 +1,15 @@
 # Contoh payload
 
-Belum ada contoh event dari instance Evolution yang sudah diuji. Setelah pairing,
-siapkan sampel tersanitasi untuk teks, foto dengan caption, VN, pesan kutipan,
+`evolution-text.json` memetakan struktur event teks Evolution 2.3.7 yang diamati
+user; semua nomor, message ID dan isi pesan adalah fiktif. Root `sender` adalah
+identitas bot, pengirim chat berasal dari `data.key.remoteJid`.
+
+Untuk tes MCP, gunakan objek file ini sebagai `webhookData.body`, bukan sebagai
+seluruh item Webhook n8n. Untuk tes lokal, bungkus dengan `{body: payload, config}`
+sesuai node Konfigurasi Staging. Timestamp fixture tetap, bukan jam server hidup.
+
+Sampel foto/VN provider nyata belum tersedia. Tes lokal memakai bentuk fiktif;
+siapkan sampel tersanitasi setelah menguji foto dengan caption, VN, pesan kutipan,
 pesan bot sendiri, grup, history dan status pengiriman.
 
 Gunakan sender/message/instance fiktif dan jangan menyertakan API key, token,

@@ -1,0 +1,42 @@
+{
+  "workflow_id": "nU03nYM4Zs3DWXAK",
+  "workflow_name": "Cashly WA",
+  "active": false,
+  "node_count": 41,
+  "groups": 4,
+  "restored_version": "dd2fdfba-29ac-4caa-bf46-eddf572f5e2b",
+  "backend_auth": "httpHeaderAuth: Cashly Backend (6 nodes)",
+  "webhook_auth_pending": "Replace Cashly Backend with a separate X-Cashly-Webhook-Secret credential; secret values not inspected.",
+  "validation": {
+    "node_configs": "passed",
+    "sdk_graph": "passed",
+    "warnings": []
+  },
+  "local_guard_checks": 55,
+  "manual_smoke": {
+    "execution_id": "20",
+    "status": "success",
+    "expected_guard": "Setup Backend Diperlukan",
+    "recovery_execution_id": "19",
+    "recovery_status": "success",
+    "backend_called": false,
+    "evolution_called": false,
+    "note": "MCP test_workflow status success with readiness false; payload history is disabled. Synthetic injection does not verify public webhook Header Auth."
+  },
+  "final_retention": {
+    "saveManualExecutions": false,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false
+  },
+  "not_verified": [
+    "staging backend integration endpoints (local linking tests passed)",
+    "real WhatsApp OTP linking (local API and mocked UI tests passed)",
+    "real receipt/voice provider payloads",
+    "AI inference",
+    "WhatsApp outbound",
+    "staging database commit",
+    "staging durable recovery (local DB claims/lease tests passed)",
+    "public webhook Header Auth"
+  ]
+}

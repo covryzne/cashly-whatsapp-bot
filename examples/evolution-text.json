@@ -1,0 +1,21 @@
+{
+  "event": "messages.upsert",
+  "instance": "cashly-staging",
+  "data": {
+    "key": {
+      "remoteJid": "000000000001@s.whatsapp.net",
+      "remoteJidAlt": "000000000001@s.whatsapp.net",
+      "fromMe": false,
+      "id": "SYNTHETIC-MESSAGE-001",
+      "addressingMode": "lid"
+    },
+    "message": {
+      "conversation": "kopi 18rb"
+    },
+    "messageType": "conversation",
+    "messageTimestamp": 1795176000
+  },
+  "sender": "000000000002@s.whatsapp.net",
+  "apikey": null
+}
+

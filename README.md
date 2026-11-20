@@ -3,8 +3,11 @@
 Deployment Evolution API dan workflow n8n untuk pencatatan pengeluaran Cashly
 melalui WhatsApp: chat, foto struk, dan voice note.
 
-**Status:** konfigurasi deployment tersedia. Evolution belum diverifikasi di
-Azure; workflow WhatsApp, linking OTP, dan adapter backend belum diimplementasikan.
+**Status:** Evolution telah diuji user untuk koneksi credential dan event teks.
+Draft workflow 41 node sudah disimpan lewat MCP pada canvas Cashly WA, tetap
+nonaktif. Backend linking OTP, status/disconnect dan outbox ber-lease sudah
+diimplementasikan dan diuji lokal pada repo Cashly API; belum di-deploy staging.
+Chat/OCR/VN finansial tetap diblokir sampai tahap adapter expense selesai.
 
 ## Pembagian layanan
 
@@ -25,13 +28,17 @@ compose.yaml                 # Evolution, PostgreSQL, Redis
 .env.example                 # Nama variabel; bukan credential deployment
 docs/setup-evolution.md      # Instalasi, pairing, credential n8n dan operasi
 docs/setup-n8n.md             # Kontrak alur dan persiapan workflow
+docs/backend-handoff.md       # Kontrak usulan yang dibutuhkan adapter backend
 docs/reference/              # Referensi lama yang tidak dipakai stack
 workflows/                   # Ekspor workflow yang sudah disanitasi
 examples/                    # Contoh event tersanitasi, setelah provider diuji
 ```
 
-Folder workflow dan examples saat ini berisi panduan. Belum ada workflow siap
-impor atau payload yang diklaim berasal dari instance Evolution nyata.
+`workflows/cashly-wa.json` adalah ekspor portable draft nonaktif, tanpa credential
+atau pinData. `workflows/cashly-wa.sdk.ts` menyimpan source SDK, dan `code/` berisi
+script runtime yang diuji. `examples/evolution-text.json` memakai struktur event
+yang sudah diamati dengan identitas/message fiktif. Backend tetap harus siap
+sebelum draft ini dapat mencatat transaksi atau membalas pengguna.
 
 ## Mulai di Azure
 
@@ -58,7 +65,8 @@ Network yang diperlukan:
 - Evolution bergabung ke `n8n_default`; credential n8n memakai
   `http://cashly-evolution:8080`.
 - n8n sudah bergabung ke `cashly-staging`; backend dapat diakses dari n8n melalui
-  `http://backend:8000`. Endpoint WhatsApp khusus integrasi tetap perlu dibuat.
+  `http://backend:8000`. Endpoint linking tersedia pada perubahan backend 0007;
+  deploy dan isi credential sebelum mengaktifkan readiness.
 - PostgreSQL/Redis Evolution hanya berada di network privat stack ini.
 - Manager diakses melalui SSH tunnel ke host `127.0.0.1:8085`.
 
@@ -87,6 +95,7 @@ Untuk memvalidasi struktur tanpa credential nyata atau menyalakan service:
 
 ```bash
 docker compose --env-file .env.example config --quiet
+node workflows/tests/workflow-guards.test.cjs
 ```
 
 Contoh `.env.example` hanya untuk validasi. Hasil ini tidak membuktikan image

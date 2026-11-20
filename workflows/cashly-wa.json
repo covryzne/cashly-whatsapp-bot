@@ -1,0 +1,1388 @@
+{
+  "name": "Cashly WA",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cashly-wa-staging",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        304
+      ],
+      "id": "09e1db04-ed2e-436c-a78f-282d2747810c",
+      "name": "Webhook",
+      "webhookId": "54baa395-2ca5-4209-b782-27eb3014d9d9"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\"config\":{\"expected_instance\":\"cashly-staging\",\"backend_base_url\":\"http://backend:8000\",\"linking_backend_ready\":false,\"expense_processing_enabled\":false}}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "b715aba1-b855-4818-91ed-adc107835661",
+      "name": "Konfigurasi Staging",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        240,
+        304
+      ],
+      "notes": "Aktifkan linking_backend_ready setelah migration, deployment dan credential siap. expense_processing_enabled tetap false selama fase linking."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const cfg = $json.config;\nconst body = $json.body ?? {};\nconst data = body.data ?? {};\nconst key = data.key ?? {};\nconst jid = typeof key.remoteJid === 'string' ? key.remoteJid : '';\nlet message = data.message ?? {};\nlet unsupportedWrapper = false;\nfor (let depth = 0; depth < 4; depth++) {\n  if (message.viewOnceMessage || message.viewOnceMessageV2 || message.viewOnceMessageV2Extension) {\n    unsupportedWrapper = true;\n    break;\n  }\n  if (message.ephemeralMessage?.message) message = message.ephemeralMessage.message;\n  else if (message.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;\n  else break;\n}\nconst image = message.imageMessage;\nconst audio = message.audioMessage;\nconst textValue = message.conversation ?? message.extendedTextMessage?.text;\nconst kind = image ? 'receipt' : audio ? 'voice' : typeof textValue === 'string' ? 'text' : 'unsupported';\nconst text = typeof textValue === 'string' ? textValue.trim() : '';\nconst media = image ?? audio;\nconst rawTime = data.messageTimestamp;\nconst timestamp = typeof rawTime === 'number' ? rawTime\n  : typeof rawTime === 'string' && /^\\d+$/.test(rawTime) ? Number(rawTime) : NaN;\nconst validTime = Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp < 253402300800;\nconst context = image?.contextInfo ?? audio?.contextInfo ?? message.extendedTextMessage?.contextInfo;\nconst command = kind !== 'text' ? 'expense'\n  : /^\\/(help|info|start)(?:\\s|$)/i.test(text) ? 'help'\n  : /^\\/laporan(?:\\s|$)/i.test(text) ? 'report'\n  : /^Halo Cashly, hubungkan WhatsApp saya\\. Kode koneksi:\\s*\\S+/i.test(text) ? 'link'\n  : 'expense_or_correction';\nlet reason = null;\nif (body.event !== 'messages.upsert') reason = 'event_not_supported';\nelse if (body.instance !== cfg.expected_instance) reason = 'wrong_instance';\nelse if (key.fromMe !== false) reason = 'not_inbound';\nelse if (!/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(jid)) reason = 'not_direct_chat';\nelse if (typeof key.id !== 'string' || !key.id || key.id.length > 255) reason = 'invalid_message_id';\nelse if (!validTime) reason = 'invalid_timestamp';\nelse if (body.type === 'history' || data.type === 'append' || data.isHistory === true) reason = 'history';\nelse if (unsupportedWrapper) reason = 'view_once_not_supported';\nelse if (kind === 'unsupported' || (kind === 'text' && !text)) reason = 'unsupported_or_empty';\nelse if (text.length > 4000 || (typeof media?.caption === 'string' && media.caption.length > 1000)) reason = 'input_too_long';\nconst phoneJid = [jid, key.remoteJidAlt].find(v => typeof v === 'string' && /^\\d+@s\\.whatsapp\\.net$/.test(v)) ?? null;\nreturn {json: {\n  config: cfg,\n  eligible: reason === null,\n  ignore_reason: reason,\n  event: {\n    contract_version: 'cashly-wa-v1', environment: 'staging', provider: 'evolution',\n    bot_id: cfg.expected_instance, event_type: 'messages.upsert',\n    message_id: typeof key.id === 'string' ? key.id : '', sender_id: jid,\n    sender_phone_jid: phoneJid, addressing_mode: typeof key.addressingMode === 'string' ? key.addressingMode : null,\n    sent_at: validTime ? new Date(timestamp * 1000).toISOString() : null,\n    received_at: new Date().toISOString(), kind, command_hint: command,\n    text: kind === 'text' ? text : null,\n    caption: typeof image?.caption === 'string' ? image.caption : null,\n    quoted_message_id: typeof context?.stanzaId === 'string' ? context.stanzaId : null,\n    media: media ? {mime_type: typeof media.mimetype === 'string' ? media.mimetype : null} : null\n  }\n}};\n"
+      },
+      "id": "aac1178c-caf6-4afe-ae02-9e83eddfd2e0",
+      "name": "Normalisasi Pesan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        304
+      ],
+      "notes": "Strip API key, metadata perangkat, raw body dan URL dari output. JID utuh dipertahankan; sender root adalah bot. Command hint tidak memberi otorisasi."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.eligible }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "61393e59-f5db-4e60-b7c3-704b7cd3bea3",
+      "name": "Pesan Layak Diproses",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"ignored\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "0729e3e4-6f36-4c7e-9a8b-523dcea3995e",
+      "name": "Abaikan Event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        960,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.config.linking_backend_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e2197b8e-e1b8-4c34-abf9-851cb453cd5d",
+      "name": "Integrasi Backend Siap",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        960,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"not_ready\",\"code\":\"CASHLY_WHATSAPP_INTEGRATION_NOT_READY\"}",
+        "options": {
+          "responseCode": 503
+        }
+      },
+      "id": "bdab308b-089b-414e-a5af-2001870f6b7a",
+      "name": "Setup Backend Diperlukan",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1200,
+        560
+      ],
+      "notes": "Draft aman: tidak ada media/AI/expense/balasan WA ketika integrasi backend belum siap."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.backend_base_url + '/api/v1/integrations/whatsapp/events' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'wa-event:' + encodeURIComponent($('Normalisasi Pesan').item.json.event.bot_id) + ':' + encodeURIComponent($('Normalisasi Pesan').item.json.event.message_id) }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.event) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "141fef65-48cc-4fe9-b19f-c97c3012072c",
+      "name": "Daftarkan Event Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1200,
+        304
+      ],
+      "notes": "Endpoint linking/help tersedia pada perubahan backend 0007; deploy sebelum readiness true. Fase ini tidak memproses expense."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Normalisasi Pesan').item.json;\nconst result = $json.data;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!result || !uuid.test(result.event_id ?? '') || !['reply','process','ignore'].includes(result.action)) {\n  throw new Error('CASHLY_ADMISSION_INVALID');\n}\nif (result.message_id !== original.event.message_id || result.sender_id !== original.event.sender_id || result.bot_id !== original.event.bot_id) {\n  throw new Error('CASHLY_EVENT_SCOPE_MISMATCH');\n}\nif (result.action === 'process' && (result.verified_link !== true || !uuid.test(result.job_id ?? '') || result.kind !== original.event.kind)) {\n  throw new Error('CASHLY_PROCESS_NOT_AUTHORIZED');\n}\nif (result.action === 'process' && original.config.expense_processing_enabled !== true) {\n  throw new Error('CASHLY_EXPENSE_PROCESSING_DISABLED');\n}\nif (result.action === 'reply' && (!uuid.test(result.reply?.id ?? '') || typeof result.reply?.text !== 'string' || !result.reply.text.trim() || result.reply.text.length > 4000)) {\n  throw new Error('CASHLY_REPLY_INVALID');\n}\nreturn {json: {\n  config: original.config, event: original.event,\n  admission: {event_id: result.event_id, action: result.action,\n    job_id: result.action === 'process' ? result.job_id : null,\n    kind: original.event.kind, verified_link: result.verified_link === true},\n  reply: result.action === 'reply' ? {id: result.reply.id, text: result.reply.text} : null\n}};\n"
+      },
+      "id": "7df8af42-77c2-4706-a325-5aaae0a1eacd",
+      "name": "Validasi Izin Backend",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        304
+      ],
+      "notes": "Wajib event ID, identitas dan message ID sesuai. action=process wajib verified_link=true dan job ID. Status kirim/LLM confidence tidak memberi izin."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"accepted\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "bf4adc4b-201c-4707-927f-e8787dd9f24a",
+      "name": "Terima Event Durable",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1680,
+        304
+      ],
+      "notes": "ACK hanya setelah backend menyimpan event/job/outbox. Backend wajib recovery pekerjaan pending sesudah ACK jika n8n berhenti."
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.admission.action === 'reply' ? 0 : $json.admission.action === 'process' ? 1 : 2 }}"
+      },
+      "id": "16189a27-03f9-4257-832d-d130c1c73ec5",
+      "name": "Arahkan Instruksi Backend",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.5,
+      "position": [
+        1920,
+        304
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "76211f38-5e2a-44ec-96f8-b2a643d7c1c3",
+      "name": "Event Sudah Ditangani",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        80
+      ],
+      "notes": "Replay/ignore tidak menulis expense dan tidak mengirim balasan kedua; recovery dimiliki backend."
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.event.kind === 'text' ? 0 : $json.event.kind === 'receipt' ? 1 : 2 }}"
+      },
+      "id": "dad8281e-c491-4ddd-ac5e-93ea729b6da3",
+      "name": "Pilih Jenis Input",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.5,
+      "position": [
+        2160,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validasi Izin Backend').item.json.config.backend_base_url + '/api/v1/integrations/whatsapp/jobs/' + $('Validasi Izin Backend').item.json.admission.job_id + '/process' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'wa-process:' + $('Validasi Izin Backend').item.json.admission.job_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({event_id:$json.admission.event_id,kind:'text'}) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 75000
+        }
+      },
+      "id": "ed17f34f-869c-4b7c-8b29-b6a33b6fac80",
+      "name": "Proses Chat Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2400,
+        240
+      ],
+      "notes": "Backend memakai event durable untuk chat, /laporan, koreksi atau klarifikasi. Writer WhatsApp, pemeriksaan ulang link dan commit berada di backend."
+    },
+    {
+      "parameters": {
+        "resource": "chat-api",
+        "operation": "get-media-base64",
+        "instanceName": "={{ $json.event.bot_id }}",
+        "messageId": "={{ $json.event.message_id }}"
+      },
+      "id": "f2bc9c7d-7530-47ba-9fb6-6a5193158b27",
+      "name": "Ambil Foto Struk",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        448
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Isi credential Evolution manual. Hanya dicapai setelah izin verified link dari backend."
+    },
+    {
+      "parameters": {
+        "resource": "chat-api",
+        "operation": "get-media-base64",
+        "instanceName": "={{ $json.event.bot_id }}",
+        "messageId": "={{ $json.event.message_id }}"
+      },
+      "id": "80535d0a-dcea-4941-a833-ebe64adeebd1",
+      "name": "Ambil Voice Note",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        688
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Ambil MIME asli; normalisasi audio dilakukan backend, tidak mengganti ekstensi sembarang."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst allowed = receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
+      },
+      "id": "fd245ef8-56e4-4d9c-86d9-64551233139e",
+      "name": "Siapkan Foto Struk",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        448
+      ],
+      "notes": "Validasi base64/MIME/batas 10 MiB. Download gagal menjadi input_error untuk balasan gagal backend; tidak menebak isi struk."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst allowed = receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
+      },
+      "id": "718c12a5-16fa-466d-8939-bdbcc287fa8a",
+      "name": "Siapkan Voice Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        688
+      ],
+      "notes": "Validasi base64/MIME/batas 5 MiB. Durasi dan decoding diverifikasi backend, lalu transkripsi dan ekstraksi bersama."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validasi Izin Backend').item.json.config.backend_base_url + '/api/v1/integrations/whatsapp/jobs/' + $('Validasi Izin Backend').item.json.admission.job_id + '/process' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'wa-process:' + $('Validasi Izin Backend').item.json.admission.job_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.process_body) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 75000
+        }
+      },
+      "id": "67626672-f0f2-4d44-b2b4-35dfabb6829e",
+      "name": "Proses OCR Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2864,
+        496
+      ],
+      "notes": "Backend memproses OCR+caption dari event durable; total konsisten dapat disimpan, ambigu needs_review. Tidak ada writer Sheets."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Validasi Izin Backend').item.json.config.backend_base_url + '/api/v1/integrations/whatsapp/jobs/' + $('Validasi Izin Backend').item.json.admission.job_id + '/process' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'wa-process:' + $('Validasi Izin Backend').item.json.admission.job_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.process_body) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 75000
+        }
+      },
+      "id": "015d2a90-5967-45e7-8d6c-b9b57a1e5bcf",
+      "name": "Proses VN Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2880,
+        688
+      ],
+      "notes": "Backend menjalankan transkripsi lalu ekstraksi bersama, fallback AI, validasi dan writer voice/whatsapp."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst result = $json.data;\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!result || result.event_id !== original.admission.event_id || result.job_id !== original.admission.job_id\n  || !['saved','needs_review','failed','queued','ignored'].includes(result.status)) throw new Error('CASHLY_OUTCOME_INVALID');\nif (result.status === 'saved' && result.committed !== true) throw new Error('CASHLY_COMMIT_NOT_CONFIRMED');\nconst reply = result.reply;\nif (reply != null && (!uuid.test(reply.id ?? '') || typeof reply.text !== 'string' || !reply.text.trim() || reply.text.length > 4000)) throw new Error('CASHLY_REPLY_INVALID');\nif (['saved','needs_review','failed'].includes(result.status) && !reply) throw new Error('CASHLY_TERMINAL_REPLY_MISSING');\nreturn {json: {config: original.config, event: original.event, admission: original.admission,\n  status: result.status, reply: reply ? {id: reply.id, text: reply.text} : null}};\n"
+      },
+      "id": "c3f3c312-0d45-4a16-9e8c-abff4a786022",
+      "name": "Validasi Hasil Cashly",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        448
+      ],
+      "notes": "Hasil harus untuk job/event yang sama. saved memerlukan committed=true. Klarifikasi terikat draft backend, tidak membuat expense baru."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.reply !== null }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8a019732-f1cf-4a76-87fe-7d70ce1c301c",
+      "name": "Ada Balasan Hasil",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        3360,
+        448
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "b4893f5a-4a77-4fe4-8d8c-5c4689b2ad8f",
+      "name": "Menunggu Recovery Backend",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3600,
+        688
+      ],
+      "notes": "queued/ignored tanpa reply tidak diklaim saved. Backend wajib melanjutkan job/outbox pending secara durable."
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({config:$json.config,event:$json.event,admission:$json.admission,reply:$json.reply}) }}",
+        "options": {}
+      },
+      "id": "131eefb9-a863-45aa-9bb6-c734ab12aeda",
+      "name": "Siapkan Balasan",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3600,
+        240
+      ],
+      "notes": "Tujuan selalu JID event tervalidasi. Teks/OTP berasal dari backend. Tidak menerima destination dari LLM/isi pesan."
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "={{ $json.event.bot_id }}",
+        "remoteJid": "={{ $json.event.sender_id }}",
+        "messageText": "={{ $json.reply.text }}",
+        "options_message": {
+          "linkPreview": false
+        }
+      },
+      "id": "3397ffb5-238b-4637-816a-a7ede04dce01",
+      "name": "Kirim Balasan WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        5040,
+        200
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Isi credential Evolution manual. Tanpa automatic retry outbound: timeout bisa berarti pesan sudah diterima provider."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Balasan yang Diklaim').item.json;\nconst response = $json;\nconst id = response.data?.key?.id;\nconst accepted = response.success === true && typeof id === 'string' && id.length > 0 && response.data?.key?.fromMe === true;\nreturn {json: {config: original.config,\n  delivery: {\n    contract_version: 'cashly-wa-v1', environment: 'staging', provider: 'evolution',\n    bot_id: original.event.bot_id, event_id: original.admission.event_id,\n    reply_id: original.reply.id, recipient_id: original.event.sender_id,\n    lease_id: original.reply.lease_id,\n    status: accepted ? 'accepted' : 'unknown', outbound_message_id: accepted ? id : null,\n    error_code: accepted ? null : 'OUTBOUND_UNCONFIRMED'\n  }\n}};\n"
+      },
+      "id": "0d97ee64-4725-4ed7-8491-71e08c3c1fef",
+      "name": "Siapkan Status Pengiriman",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5280,
+        200
+      ],
+      "notes": "Provider success + outbound ID hanya accepted, bukan delivered/read. Error/hasil tak pasti dilaporkan unknown tanpa raw error/OTP."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.backend_base_url + '/api/v1/integrations/whatsapp/deliveries' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ 'wa-delivery:' + $json.delivery.reply_id + ':' + $json.delivery.status }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.delivery) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "86f9c5c8-6e51-4640-89a5-6187123595d1",
+      "name": "Laporkan Pengiriman Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        5520,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Backend menyimpan status outbox; unknown direkonsiliasi, bukan mengulang commit. Endpoint wajib idempotent."
+    },
+    {
+      "parameters": {},
+      "id": "bb45f874-19e3-4800-bc3c-f166ca1ab550",
+      "name": "Selesai",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        5760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Fase linking\n1. Deploy backend + migration 0007.\n2. Isi credential integrasi dan webhook manual.\n3. linking_backend_ready=true setelah QA staging.\n4. expense_processing_enabled=false: chat/OCR/VN finansial belum diaktifkan.",
+        "height": 300,
+        "width": 600,
+        "color": 5
+      },
+      "id": "473c5c6c-926d-4caa-b132-f51d8e0fb240",
+      "name": "Petunjuk Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Pencatatan belum aktif\nFase ini hanya linking OTP, bantuan dan status.\nBackend hanya action reply/ignore. Guard menolak process saat expense_processing_enabled=false.\nCabang chat/OCR/VN dipertahankan untuk tahap berikutnya.",
+        "height": 300,
+        "width": 600,
+        "color": 5
+      },
+      "id": "77b274da-fe0c-4934-a619-13cded078be3",
+      "name": "Aturan Pencatatan",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2256,
+        -176
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Outbox\nClaim atomik sebelum send; lease wajib pada delivery report.\nTanpa retry send otomatis. Lease habis menjadi unknown.\nRecovery mengambil satu ready outbox per menit; tidak resend claimed/unknown.",
+        "height": 300,
+        "width": 600,
+        "color": 5
+      },
+      "id": "56888ecb-6f7d-4d33-ab81-ba535fb4fda5",
+      "name": "Pengiriman dan Recovery",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3888,
+        -160
+      ]
+    },
+    {
+      "name": "Siapkan Klaim",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({config:$json.config,requested_reply_id:$json.reply?.id ?? null,expected_event:$json.event ?? null}) }}",
+        "options": {}
+      },
+      "position": [
+        3840,
+        240
+      ]
+    },
+    {
+      "name": "Klaim Balasan Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.backend_base_url + '/api/v1/integrations/whatsapp/outbox/claim' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Contract",
+              "value": "cashly-wa-v1"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({reply_id:$json.requested_reply_id}) }}",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "position": [
+        4080,
+        240
+      ],
+      "notes": "Credential integrasi diisi manual. Claim sekali; timeout tidak diulang otomatis.",
+      "retryOnFail": false
+    },
+    {
+      "name": "Validasi Klaim Outbox",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const request = $('Siapkan Klaim').item.json;\nconst value = $json.data;\nif (value === null) return {json: {has_claim: false}};\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!value || !uuid.test(value.event_id ?? '') || value.bot_id !== request.config.expected_instance\n  || value.action !== 'reply' || !/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(value.sender_id ?? '')\n  || !uuid.test(value.reply?.id ?? '') || !uuid.test(value.reply?.lease_id ?? '')\n  || typeof value.reply.text !== 'string' || !value.reply.text.trim() || value.reply.text.length > 4000) {\n  throw new Error('CASHLY_OUTBOX_CLAIM_INVALID');\n}\nif (request.requested_reply_id && (request.requested_reply_id !== value.reply.id\n  || request.expected_event?.sender_id !== value.sender_id\n  || request.expected_event?.message_id !== value.message_id)) throw new Error('CASHLY_OUTBOX_SCOPE_MISMATCH');\nreturn {json: {\n  has_claim: true, config: request.config,\n  event: {bot_id: value.bot_id, sender_id: value.sender_id, message_id: value.message_id, kind: value.kind},\n  admission: {event_id: value.event_id}, reply: value.reply\n}};\n"
+      },
+      "position": [
+        4320,
+        240
+      ]
+    },
+    {
+      "name": "Ada Klaim Balasan",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_claim }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        4560,
+        240
+      ]
+    },
+    {
+      "name": "Balasan yang Diklaim",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({config:$json.config,event:$json.event,admission:$json.admission,reply:$json.reply}) }}",
+        "options": {}
+      },
+      "position": [
+        4800,
+        200
+      ]
+    },
+    {
+      "name": "Outbox Kosong",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        4800,
+        400
+      ]
+    },
+    {
+      "name": "Pulihkan Outbox Setiap Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        },
+        "misfirePolicy": "skip"
+      },
+      "position": [
+        0,
+        1100
+      ]
+    },
+    {
+      "name": "Konfigurasi Recovery",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "{\"config\":{\"expected_instance\":\"cashly-staging\",\"backend_base_url\":\"http://backend:8000\",\"linking_backend_ready\":false,\"expense_processing_enabled\":false}}",
+        "options": {}
+      },
+      "position": [
+        240,
+        1100
+      ]
+    },
+    {
+      "name": "Recovery Backend Siap",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.config.linking_backend_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        480,
+        1100
+      ]
+    },
+    {
+      "name": "Recovery Belum Siap",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        720,
+        1260
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Konfigurasi Staging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Konfigurasi Staging": {
+      "main": [
+        [
+          {
+            "node": "Normalisasi Pesan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalisasi Pesan": {
+      "main": [
+        [
+          {
+            "node": "Pesan Layak Diproses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pesan Layak Diproses": {
+      "main": [
+        [
+          {
+            "node": "Integrasi Backend Siap",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Abaikan Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Integrasi Backend Siap": {
+      "main": [
+        [
+          {
+            "node": "Daftarkan Event Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Setup Backend Diperlukan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daftarkan Event Cashly": {
+      "main": [
+        [
+          {
+            "node": "Validasi Izin Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Izin Backend": {
+      "main": [
+        [
+          {
+            "node": "Terima Event Durable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Terima Event Durable": {
+      "main": [
+        [
+          {
+            "node": "Arahkan Instruksi Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arahkan Instruksi Backend": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Balasan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pilih Jenis Input",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Event Sudah Ditangani",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pilih Jenis Input": {
+      "main": [
+        [
+          {
+            "node": "Proses Chat Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ambil Foto Struk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ambil Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Foto Struk": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Foto Struk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Foto Struk": {
+      "main": [
+        [
+          {
+            "node": "Proses OCR Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Voice Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Voice Note": {
+      "main": [
+        [
+          {
+            "node": "Proses VN Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proses Chat Cashly": {
+      "main": [
+        [
+          {
+            "node": "Validasi Hasil Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proses OCR Cashly": {
+      "main": [
+        [
+          {
+            "node": "Validasi Hasil Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proses VN Cashly": {
+      "main": [
+        [
+          {
+            "node": "Validasi Hasil Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Hasil Cashly": {
+      "main": [
+        [
+          {
+            "node": "Ada Balasan Hasil",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ada Balasan Hasil": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Balasan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Menunggu Recovery Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Balasan": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Klaim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Balasan WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Status Pengiriman",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Status Pengiriman": {
+      "main": [
+        [
+          {
+            "node": "Laporkan Pengiriman Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Laporkan Pengiriman Cashly": {
+      "main": [
+        [
+          {
+            "node": "Selesai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Siapkan Klaim": {
+      "main": [
+        [
+          {
+            "node": "Klaim Balasan Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Klaim Balasan Cashly": {
+      "main": [
+        [
+          {
+            "node": "Validasi Klaim Outbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Klaim Outbox": {
+      "main": [
+        [
+          {
+            "node": "Ada Klaim Balasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ada Klaim Balasan": {
+      "main": [
+        [
+          {
+            "node": "Balasan yang Diklaim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Outbox Kosong",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Balasan yang Diklaim": {
+      "main": [
+        [
+          {
+            "node": "Kirim Balasan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pulihkan Outbox Setiap Menit": {
+      "main": [
+        [
+          {
+            "node": "Konfigurasi Recovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Konfigurasi Recovery": {
+      "main": [
+        [
+          {
+            "node": "Recovery Backend Siap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recovery Backend Siap": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Klaim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recovery Belum Siap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodeGroups": [
+    {
+      "id": "90883d0f-d96e-465b-b329-d0fbbcc9d552",
+      "name": "Terima pesan terverifikasi",
+      "nodeNames": [
+        "Konfigurasi Staging",
+        "Normalisasi Pesan",
+        "Pesan Layak Diproses",
+        "Abaikan Event",
+        "Integrasi Backend Siap",
+        "Setup Backend Diperlukan",
+        "Daftarkan Event Cashly",
+        "Validasi Izin Backend",
+        "Terima Event Durable",
+        "Petunjuk Setup"
+      ],
+      "description": "Saring event masuk dan minta backend mendaftarkan pekerjaan sebelum mengakui penerimaan."
+    },
+    {
+      "id": "ba002f3d-d9b7-4051-812a-e14ae5f421ad",
+      "name": "Catat melalui Cashly",
+      "nodeNames": [
+        "Arahkan Instruksi Backend",
+        "Event Sudah Ditangani",
+        "Pilih Jenis Input",
+        "Proses Chat Cashly",
+        "Ambil Foto Struk",
+        "Ambil Voice Note",
+        "Siapkan Foto Struk",
+        "Siapkan Voice Note",
+        "Proses OCR Cashly",
+        "Proses VN Cashly",
+        "Validasi Hasil Cashly",
+        "Ada Balasan Hasil",
+        "Menunggu Recovery Backend",
+        "Siapkan Balasan",
+        "Aturan Pencatatan"
+      ],
+      "description": "OTP, bantuan, laporan, chat, foto dan VN mengikuti izin serta hasil validasi backend yang sama."
+    },
+    {
+      "id": "e100a70b-a454-4455-8b90-1262dd4cc155",
+      "name": "Balas ke pengirim",
+      "nodeNames": [
+        "Kirim Balasan WhatsApp",
+        "Siapkan Status Pengiriman",
+        "Laporkan Pengiriman Cashly",
+        "Selesai",
+        "Pengiriman dan Recovery",
+        "Siapkan Klaim",
+        "Klaim Balasan Cashly",
+        "Validasi Klaim Outbox",
+        "Ada Klaim Balasan",
+        "Balasan yang Diklaim",
+        "Outbox Kosong"
+      ],
+      "description": "Kirim hasil ke chat asal dan laporkan status pengiriman tanpa mengulangi penyimpanan transaksi."
+    },
+    {
+      "name": "Pulihkan balasan siap kirim",
+      "description": "Ambil satu outbox ready per menit. Tidak mengulang send yang sudah claimed/unknown.",
+      "nodeNames": [
+        "Konfigurasi Recovery",
+        "Recovery Backend Siap"
+      ]
+    }
+  ],
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timezone": "Asia/Jakarta",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false,
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "executionTimeout": 180
+  },
+  "active": false,
+  "pinData": {}
+}
