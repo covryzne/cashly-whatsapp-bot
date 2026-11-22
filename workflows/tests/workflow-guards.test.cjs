@@ -70,6 +70,23 @@ test('photo caption preserved, media URL excluded', () => {
   assert.equal(result.event.kind, 'receipt'); assert.equal(result.event.caption, 'kemarin');
   assert(!JSON.stringify(result).includes('do-not-fetch'));
 });
+test('PDF document follows receipt admission and keeps only the caption and media type', () => {
+  const x = incoming();
+  x.body.data.message = {documentWithCaptionMessage: {message: {documentMessage: {
+    mimetype: 'application/pdf', caption: 'nota kopi', url: 'https://do-not-fetch.invalid'
+  }}}};
+  const result = run('normalize-event', x);
+  assert(result.eligible);
+  assert.equal(result.event.kind, 'receipt');
+  assert.equal(result.event.caption, 'nota kopi');
+  assert.deepEqual(result.event.media, {mime_type: 'application/pdf'});
+  assert(!JSON.stringify(result).includes('do-not-fetch'));
+  const ctx = {'Validasi Izin Backend': {...accepted, event: result.event}};
+  const media = run('prepare-media', {success: true, data: {mimetype: 'application/pdf', base64: 'JVBERi0='}}, ctx);
+  assert.equal(media.process_body.media.mime_type, 'application/pdf');
+  x.body.data.message = {documentMessage: {mimetype: 'application/zip'}};
+  assert(!run('normalize-event', x).eligible);
+});
 test('voice classified without transcription in n8n', () => {
   const x = incoming(); x.body.data.message = {audioMessage: {ptt: true, mimetype: 'audio/ogg; codecs=opus'}};
   assert.equal(run('normalize-event', x).event.kind, 'voice');
@@ -82,6 +99,10 @@ test('report hint never grants link', () => {
   const x = incoming(); x.body.data.message.conversation = '/laporan bulan ini';
   const result = run('normalize-event', x); assert.equal(result.event.command_hint, 'report');
   assert.equal(result.event.verified_link, undefined);
+});
+test('PDF command uses report hint', () => {
+  const x = incoming(); x.body.data.message.conversation = '/reportpdf bulan ini';
+  assert.equal(run('normalize-event', x).event.command_hint, 'report');
 });
 test('valid process admission accepted', () => assert.equal(accepted.admission.job_id, jobId));
 for (const [name, mutate] of [

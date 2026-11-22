@@ -11,6 +11,7 @@ if (!value || !uuid.test(value.event_id ?? '') || value.bot_id !== request.confi
 if (request.requested_reply_id && (request.requested_reply_id !== value.reply.id
   || request.expected_event?.sender_id !== value.sender_id
   || request.expected_event?.message_id !== value.message_id)) throw new Error('CASHLY_OUTBOX_SCOPE_MISMATCH');
+if (value.reply.report_pdf === true && value.verified_link !== true) throw new Error('CASHLY_REPORT_SCOPE_MISMATCH');
 return {json: {
   has_claim: true, config: request.config,
   event: {bot_id: value.bot_id, sender_id: value.sender_id, message_id: value.message_id, kind: value.kind},

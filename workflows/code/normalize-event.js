@@ -16,18 +16,21 @@ for (let depth = 0; depth < 4; depth++) {
 }
 const image = message.imageMessage;
 const audio = message.audioMessage;
+const documentMime = message.documentMessage?.mimetype;
+const document = typeof documentMime === 'string' && documentMime.toLowerCase().split(';')[0].trim() === 'application/pdf'
+  ? message.documentMessage : null;
 const textValue = message.conversation ?? message.extendedTextMessage?.text;
-const kind = image ? 'receipt' : audio ? 'voice' : typeof textValue === 'string' ? 'text' : 'unsupported';
+const kind = image || document ? 'receipt' : audio ? 'voice' : typeof textValue === 'string' ? 'text' : 'unsupported';
 const text = typeof textValue === 'string' ? textValue.trim() : '';
-const media = image ?? audio;
+const media = image ?? document ?? audio;
 const rawTime = data.messageTimestamp;
 const timestamp = typeof rawTime === 'number' ? rawTime
   : typeof rawTime === 'string' && /^\d+$/.test(rawTime) ? Number(rawTime) : NaN;
 const validTime = Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp < 253402300800;
-const context = image?.contextInfo ?? audio?.contextInfo ?? message.extendedTextMessage?.contextInfo;
+const context = media?.contextInfo ?? message.extendedTextMessage?.contextInfo;
 const command = kind !== 'text' ? 'expense'
   : /^\/(help|info|start)(?:\s|$)/i.test(text) ? 'help'
-  : /^\/laporan(?:\s|$)/i.test(text) ? 'report'
+  : /^\/(laporan|reportpdf)(?:\s|$)/i.test(text) ? 'report'
   : /^Halo Cashly, hubungkan WhatsApp saya\. Kode koneksi:\s*\S+/i.test(text) ? 'link'
   : 'expense_or_correction';
 let reason = null;
@@ -54,7 +57,7 @@ return {json: {
     sent_at: validTime ? new Date(timestamp * 1000).toISOString() : null,
     received_at: new Date().toISOString(), kind, command_hint: command,
     text: kind === 'text' ? text : null,
-    caption: typeof image?.caption === 'string' ? image.caption : null,
+    caption: kind === 'receipt' && typeof media?.caption === 'string' ? media.caption : null,
     quoted_message_id: typeof context?.stanzaId === 'string' ? context.stanzaId : null,
     media: media ? {mime_type: typeof media.mimetype === 'string' ? media.mimetype : null} : null
   }

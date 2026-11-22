@@ -136,10 +136,10 @@ Callback delivery provider belum dipasang pada draft ini.
 
 ## Recovery yang harus tersedia
 
-Sesudah ACK, n8n bisa mati saat download, AI atau kirim balasan. Backend perlu
-job lease/state dan outbox durable, pemulihan pending job dan reconciliation
-outbound. Tentukan worker, retry policy dan cara memanggil transport secara
-eksplisit sebelum aktivasi. Draft ini belum menyediakan worker/cron recovery.
+Sesudah ACK, n8n bisa mati saat download, AI atau kirim balasan. Job dan balasan
+tersimpan di backend. Jadwal **Pulihkan Outbox Setiap Menit** mengambil balasan
+yang siap, termasuk balasan untuk job kedaluwarsa. Pengguna diminta mengirim ulang
+jika job kedaluwarsa sebelum tersimpan. Status kirim `unknown` ditinjau di Evolution.
 
 Menyimpan job/outbox saja belum menjamin exactly-once send. Crash sesudah provider
 menerima pesan tetapi sebelum laporan bisa memberi status unknown. Tidak ada

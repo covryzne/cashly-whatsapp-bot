@@ -5,7 +5,8 @@ const payload = result.data;
 const mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';
 const base64 = payload?.base64;
 const maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;
-const allowed = receipt ? ['image/jpeg','image/png','image/webp']
+const pdf = receipt && original.event.media?.mime_type?.toLowerCase().split(';')[0].trim() === 'application/pdf';
+const allowed = pdf ? ['application/pdf'] : receipt ? ['image/jpeg','image/png','image/webp']
   : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];
 let issue = null;
 if (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';

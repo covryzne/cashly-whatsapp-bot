@@ -1,6 +1,6 @@
 # Draft workflow Cashly WA
 
-Draft 41 node disimpan lewat MCP di [Cashly WA](https://n8n.covryzne.dev/workflow/nU03nYM4Zs3DWXAK).
+Draft 45 node disimpan lewat MCP di [Cashly WA](https://n8n.covryzne.dev/workflow/nU03nYM4Zs3DWXAK).
 Workflow belum dipublish. Path Webhook existing dipertahankan. Ekspor portable
 ada di `workflows/cashly-wa.json` dengan path berbeda `cashly-wa-staging`.
 
@@ -13,8 +13,8 @@ ada di `workflows/cashly-wa.json` dengan path berbeda `cashly-wa-staging`.
   command hint; backend tetap menentukan intent dan otorisasinya.
 - Backend mendaftarkan event, menyelesaikan replay/help/linking atau memberi
   izin memproses job. ACK 200 diberikan sesudah admission tervalidasi.
-- Cabang chat, OCR dan VN dipertahankan untuk fase berikutnya; pada fase linking
-  `expense_processing_enabled=false` menolak action process meski verified_link=true.
+- Cabang chat, OCR dan VN memakai endpoint pemrosesan backend setelah OTP.
+  Ekspor portable membiarkan `expense_processing_enabled=false` sampai aktivasi staging.
 - Pemeriksaan bentuk respons backend; saved wajib committed=true.
 - Pengiriman via Evolution dan laporan accepted/unknown dengan idempotency key.
 - Claim atomik outbox sebelum send, lease pada report, recovery satu ready per menit.
@@ -25,18 +25,14 @@ ada di `workflows/cashly-wa.json` dengan path berbeda `cashly-wa-staging`.
 
 | Node | Credential |
 | --- | --- |
-| Webhook | Header Auth, nama header `X-Cashly-Webhook-Secret`, secret acak privat |
+| Cashly Webhook | Header Auth → Cashly Webhook, nama header `X-Cashly-Webhook-Secret`, secret acak privat |
 | Ambil Foto Struk, Ambil Voice Note, Kirim Balasan WhatsApp | Evolution API, URL `http://cashly-evolution:8080`, token instance |
 | Daftarkan Event Cashly, Klaim Balasan Cashly, Laporkan Pengiriman Cashly | Header Auth → Cashly Backend, header X-Cashly-Integration-Key |
-| Proses Chat Cashly, Proses OCR Cashly, Proses VN Cashly | Header Auth → Cashly Backend; cabang finansial tetap belum aktif |
+| Proses Chat Cashly, Proses OCR Cashly, Proses VN Cashly | Header Auth → Cashly Backend, header X-Cashly-Integration-Key |
 
-Saat menyimpan canvas, n8n otomatis memasangkan credential **Evolution Cashly**
-yang sudah dibuat user pada tiga node Evolution. Nilai key tidak dibaca/diubah.
-Periksa pilihannya; tidak perlu mengetik key di parameter node. Credential
-Keenam HTTP Request backend sudah memakai Header Auth **Cashly Backend** pada canvas.
-Webhook masih memakai credential backend dan harus diganti manual dengan credential
-terpisah untuk X-Cashly-Webhook-Secret sebelum tes HTTP/aktivasi. Ekspor repo menghapus
-seluruh referensi credential supaya pemetaan dilakukan manual saat impor.
+Canvas staging sudah memilih **Evolution Cashly**, **Cashly Backend**, dan
+**Cashly Webhook** sesuai tabel. Isi nilai credential lewat credential store n8n.
+Saat memakai ekspor portable, pilih kembali credential yang sesuai pada setiap node.
 
 Pasang header `X-Cashly-Webhook-Secret` yang sama pada konfigurasi webhook
 instance Evolution. Bila UI Manager tidak menampilkan custom headers, gunakan
@@ -80,7 +76,7 @@ karena Evolution dapat mengulang pengiriman.
 
 ## Uji yang sudah dilakukan
 
-- Validasi 41 node dan SDK graph lolos tanpa warning.
+- Validasi 45 node dan SDK graph lolos tanpa warning.
 - 55 pemeriksaan guard lokal lolos: JID, fromMe/grup, history flag, tipe
   pesan, bound media, scope admission, commit dan status outbound.
 - Eksekusi manual n8n dengan data fiktif mencapai readiness gate, tidak mencapai
@@ -100,10 +96,12 @@ webhook publik sudah benar. Tes tidak memanggil AI, mengirim WA, atau menulis DB
 3. Dengan linking_backend_ready=true pada kedua konfigurasi, uji nomor unlinked,
    permintaan challenge dari app, OTP ke sender dan verifikasi di app.
 4. Uji reload, salah OTP, resend, disconnect dan konflik nomor akun kedua.
-5. Uji linked/unlinked chat/foto/VN: balasan belum tersedia, tidak membuat expense.
-6. Verifikasi recovery ready setelah ACK/restart dan unknown tidak resend otomatis.
-7. Pengembangan expense/source WhatsApp, OCR/VN, koreksi, AI dan streak merupakan
-   fase berikutnya; jangan mengaktifkan flag expense hanya karena linking berhasil.
+5. Ikuti `WHATSAPP_CAPTURE.md` di repo backend untuk migration 0009, grant runtime,
+   dan `WHATSAPP_RECORDING_ENABLED=true`. Aktifkan `expense_processing_enabled`
+   pada **Konfigurasi Staging** dan **Konfigurasi Recovery** untuk uji pencatatan.
+6. Uji chat, foto dan VN dari akun linked. Cek nominal di aplikasi. Pesan yang
+   kurang detail meminta klarifikasi, sedangkan nomor unlinked mendapat panduan OTP.
+7. Verifikasi recovery ready setelah ACK/restart dan unknown tidak resend otomatis.
 
 Status outbound accepted bukan delivered/read. Tidak ada retry otomatis Send
 Text; HTTP laporan delivery saja memiliki dua percobaan dan wajib idempotent.

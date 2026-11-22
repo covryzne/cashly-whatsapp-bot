@@ -39,7 +39,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const cfg = $json.config;\nconst body = $json.body ?? {};\nconst data = body.data ?? {};\nconst key = data.key ?? {};\nconst jid = typeof key.remoteJid === 'string' ? key.remoteJid : '';\nlet message = data.message ?? {};\nlet unsupportedWrapper = false;\nfor (let depth = 0; depth < 4; depth++) {\n  if (message.viewOnceMessage || message.viewOnceMessageV2 || message.viewOnceMessageV2Extension) {\n    unsupportedWrapper = true;\n    break;\n  }\n  if (message.ephemeralMessage?.message) message = message.ephemeralMessage.message;\n  else if (message.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;\n  else break;\n}\nconst image = message.imageMessage;\nconst audio = message.audioMessage;\nconst textValue = message.conversation ?? message.extendedTextMessage?.text;\nconst kind = image ? 'receipt' : audio ? 'voice' : typeof textValue === 'string' ? 'text' : 'unsupported';\nconst text = typeof textValue === 'string' ? textValue.trim() : '';\nconst media = image ?? audio;\nconst rawTime = data.messageTimestamp;\nconst timestamp = typeof rawTime === 'number' ? rawTime\n  : typeof rawTime === 'string' && /^\\d+$/.test(rawTime) ? Number(rawTime) : NaN;\nconst validTime = Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp < 253402300800;\nconst context = image?.contextInfo ?? audio?.contextInfo ?? message.extendedTextMessage?.contextInfo;\nconst command = kind !== 'text' ? 'expense'\n  : /^\\/(help|info|start)(?:\\s|$)/i.test(text) ? 'help'\n  : /^\\/laporan(?:\\s|$)/i.test(text) ? 'report'\n  : /^Halo Cashly, hubungkan WhatsApp saya\\. Kode koneksi:\\s*\\S+/i.test(text) ? 'link'\n  : 'expense_or_correction';\nlet reason = null;\nif (body.event !== 'messages.upsert') reason = 'event_not_supported';\nelse if (body.instance !== cfg.expected_instance) reason = 'wrong_instance';\nelse if (key.fromMe !== false) reason = 'not_inbound';\nelse if (!/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(jid)) reason = 'not_direct_chat';\nelse if (typeof key.id !== 'string' || !key.id || key.id.length > 255) reason = 'invalid_message_id';\nelse if (!validTime) reason = 'invalid_timestamp';\nelse if (body.type === 'history' || data.type === 'append' || data.isHistory === true) reason = 'history';\nelse if (unsupportedWrapper) reason = 'view_once_not_supported';\nelse if (kind === 'unsupported' || (kind === 'text' && !text)) reason = 'unsupported_or_empty';\nelse if (text.length > 4000 || (typeof media?.caption === 'string' && media.caption.length > 1000)) reason = 'input_too_long';\nconst phoneJid = [jid, key.remoteJidAlt].find(v => typeof v === 'string' && /^\\d+@s\\.whatsapp\\.net$/.test(v)) ?? null;\nreturn {json: {\n  config: cfg,\n  eligible: reason === null,\n  ignore_reason: reason,\n  event: {\n    contract_version: 'cashly-wa-v1', environment: 'staging', provider: 'evolution',\n    bot_id: cfg.expected_instance, event_type: 'messages.upsert',\n    message_id: typeof key.id === 'string' ? key.id : '', sender_id: jid,\n    sender_phone_jid: phoneJid, addressing_mode: typeof key.addressingMode === 'string' ? key.addressingMode : null,\n    sent_at: validTime ? new Date(timestamp * 1000).toISOString() : null,\n    received_at: new Date().toISOString(), kind, command_hint: command,\n    text: kind === 'text' ? text : null,\n    caption: typeof image?.caption === 'string' ? image.caption : null,\n    quoted_message_id: typeof context?.stanzaId === 'string' ? context.stanzaId : null,\n    media: media ? {mime_type: typeof media.mimetype === 'string' ? media.mimetype : null} : null\n  }\n}};\n"
+        "jsCode": "const cfg = $json.config;\nconst body = $json.body ?? {};\nconst data = body.data ?? {};\nconst key = data.key ?? {};\nconst jid = typeof key.remoteJid === 'string' ? key.remoteJid : '';\nlet message = data.message ?? {};\nlet unsupportedWrapper = false;\nfor (let depth = 0; depth < 4; depth++) {\n  if (message.viewOnceMessage || message.viewOnceMessageV2 || message.viewOnceMessageV2Extension) {\n    unsupportedWrapper = true;\n    break;\n  }\n  if (message.ephemeralMessage?.message) message = message.ephemeralMessage.message;\n  else if (message.documentWithCaptionMessage?.message) message = message.documentWithCaptionMessage.message;\n  else break;\n}\nconst image = message.imageMessage;\nconst audio = message.audioMessage;\nconst documentMime = message.documentMessage?.mimetype;\nconst document = typeof documentMime === 'string' && documentMime.toLowerCase().split(';')[0].trim() === 'application/pdf'\n  ? message.documentMessage : null;\nconst textValue = message.conversation ?? message.extendedTextMessage?.text;\nconst kind = image || document ? 'receipt' : audio ? 'voice' : typeof textValue === 'string' ? 'text' : 'unsupported';\nconst text = typeof textValue === 'string' ? textValue.trim() : '';\nconst media = image ?? document ?? audio;\nconst rawTime = data.messageTimestamp;\nconst timestamp = typeof rawTime === 'number' ? rawTime\n  : typeof rawTime === 'string' && /^\\d+$/.test(rawTime) ? Number(rawTime) : NaN;\nconst validTime = Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp < 253402300800;\nconst context = media?.contextInfo ?? message.extendedTextMessage?.contextInfo;\nconst command = kind !== 'text' ? 'expense'\n  : /^\\/(help|info|start)(?:\\s|$)/i.test(text) ? 'help'\n  : /^\\/(laporan|reportpdf)(?:\\s|$)/i.test(text) ? 'report'\n  : /^Halo Cashly, hubungkan WhatsApp saya\\. Kode koneksi:\\s*\\S+/i.test(text) ? 'link'\n  : 'expense_or_correction';\nlet reason = null;\nif (body.event !== 'messages.upsert') reason = 'event_not_supported';\nelse if (body.instance !== cfg.expected_instance) reason = 'wrong_instance';\nelse if (key.fromMe !== false) reason = 'not_inbound';\nelse if (!/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(jid)) reason = 'not_direct_chat';\nelse if (typeof key.id !== 'string' || !key.id || key.id.length > 255) reason = 'invalid_message_id';\nelse if (!validTime) reason = 'invalid_timestamp';\nelse if (body.type === 'history' || data.type === 'append' || data.isHistory === true) reason = 'history';\nelse if (unsupportedWrapper) reason = 'view_once_not_supported';\nelse if (kind === 'unsupported' || (kind === 'text' && !text)) reason = 'unsupported_or_empty';\nelse if (text.length > 4000 || (typeof media?.caption === 'string' && media.caption.length > 1000)) reason = 'input_too_long';\nconst phoneJid = [jid, key.remoteJidAlt].find(v => typeof v === 'string' && /^\\d+@s\\.whatsapp\\.net$/.test(v)) ?? null;\nreturn {json: {\n  config: cfg,\n  eligible: reason === null,\n  ignore_reason: reason,\n  event: {\n    contract_version: 'cashly-wa-v1', environment: 'staging', provider: 'evolution',\n    bot_id: cfg.expected_instance, event_type: 'messages.upsert',\n    message_id: typeof key.id === 'string' ? key.id : '', sender_id: jid,\n    sender_phone_jid: phoneJid, addressing_mode: typeof key.addressingMode === 'string' ? key.addressingMode : null,\n    sent_at: validTime ? new Date(timestamp * 1000).toISOString() : null,\n    received_at: new Date().toISOString(), kind, command_hint: command,\n    text: kind === 'text' ? text : null,\n    caption: kind === 'receipt' && typeof media?.caption === 'string' ? media.caption : null,\n    quoted_message_id: typeof context?.stanzaId === 'string' ? context.stanzaId : null,\n    media: media ? {mime_type: typeof media.mimetype === 'string' ? media.mimetype : null} : null\n  }\n}};\n"
       },
       "id": "aac1178c-caf6-4afe-ae02-9e83eddfd2e0",
       "name": "Normalisasi Pesan",
@@ -358,7 +358,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst allowed = receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
+        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst pdf = receipt && original.event.media?.mime_type?.toLowerCase().split(';')[0].trim() === 'application/pdf';\nconst allowed = pdf ? ['application/pdf'] : receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
       },
       "id": "fd245ef8-56e4-4d9c-86d9-64551233139e",
       "name": "Siapkan Foto Struk",
@@ -373,7 +373,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst allowed = receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
+        "jsCode": "const original = $('Validasi Izin Backend').item.json;\nconst receipt = original.event.kind === 'receipt';\nconst result = $json;\nconst payload = result.data;\nconst mime = typeof payload?.mimetype === 'string' ? payload.mimetype.toLowerCase().split(';')[0].trim() : '';\nconst base64 = payload?.base64;\nconst maxBytes = receipt ? 10 * 1024 * 1024 : 5 * 1024 * 1024;\nconst pdf = receipt && original.event.media?.mime_type?.toLowerCase().split(';')[0].trim() === 'application/pdf';\nconst allowed = pdf ? ['application/pdf'] : receipt ? ['image/jpeg','image/png','image/webp']\n  : ['audio/ogg','audio/opus','audio/webm','audio/mp4','audio/m4a','audio/x-m4a','audio/aac','audio/mpeg','audio/mp3','audio/wav','audio/x-wav','audio/flac','audio/x-flac'];\nlet issue = null;\nif (result.success !== true || !payload) issue = 'MEDIA_FETCH_FAILED';\nelse if (!allowed.includes(mime)) issue = 'MEDIA_TYPE_UNSUPPORTED';\nelse if (typeof base64 !== 'string' || !base64 || base64.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) issue = 'MEDIA_BASE64_INVALID';\nelse {\n  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;\n  if (base64.length / 4 * 3 - padding > maxBytes) issue = 'MEDIA_TOO_LARGE';\n}\nreturn {json: {\n  config: original.config, event: original.event, admission: original.admission,\n  process_body: {\n    event_id: original.admission.event_id, kind: original.event.kind,\n    media: issue ? null : {mime_type: mime, data: base64}, input_error: issue\n  }\n}};\n"
       },
       "id": "718c12a5-16fa-466d-8939-bdbcc287fa8a",
       "name": "Siapkan Voice Note",
@@ -464,7 +464,7 @@
               "responseFormat": "json"
             }
           },
-          "timeout": 75000
+          "timeout": 145000
         }
       },
       "id": "015d2a90-5967-45e7-8d6c-b9b57a1e5bcf",
@@ -556,9 +556,9 @@
     {
       "parameters": {
         "resource": "messages-api",
-        "instanceName": "={{ $json.event.bot_id }}",
-        "remoteJid": "={{ $json.event.sender_id }}",
-        "messageText": "={{ $json.reply.text }}",
+        "instanceName": "={{ $('Balasan yang Diklaim').item.json.event.bot_id }}",
+        "remoteJid": "={{ $('Balasan yang Diklaim').item.json.event.sender_id }}",
+        "messageText": "={{ $json.data?.text ?? $('Balasan yang Diklaim').item.json.reply.text }}",
         "options_message": {
           "linkPreview": false
         }
@@ -568,8 +568,8 @@
       "type": "n8n-nodes-evolution-api.evolutionApi",
       "typeVersion": 1,
       "position": [
-        5040,
-        200
+        5720,
+        260
       ],
       "onError": "continueRegularOutput",
       "notes": "Isi credential Evolution manual. Tanpa automatic retry outbound: timeout bisa berarti pesan sudah diterima provider."
@@ -584,7 +584,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5280,
+        5960,
         200
       ],
       "notes": "Provider success + outbound ID hanya accepted, bukan delivered/read. Error/hasil tak pasti dilaporkan unknown tanpa raw error/OTP."
@@ -630,7 +630,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.5,
       "position": [
-        5520,
+        6200,
         200
       ],
       "retryOnFail": true,
@@ -645,7 +645,7 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        5760,
+        6440,
         200
       ]
     },
@@ -759,7 +759,7 @@
       "typeVersion": 2,
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const request = $('Siapkan Klaim').item.json;\nconst value = $json.data;\nif (value === null) return {json: {has_claim: false}};\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!value || !uuid.test(value.event_id ?? '') || value.bot_id !== request.config.expected_instance\n  || value.action !== 'reply' || !/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(value.sender_id ?? '')\n  || !uuid.test(value.reply?.id ?? '') || !uuid.test(value.reply?.lease_id ?? '')\n  || typeof value.reply.text !== 'string' || !value.reply.text.trim() || value.reply.text.length > 4000) {\n  throw new Error('CASHLY_OUTBOX_CLAIM_INVALID');\n}\nif (request.requested_reply_id && (request.requested_reply_id !== value.reply.id\n  || request.expected_event?.sender_id !== value.sender_id\n  || request.expected_event?.message_id !== value.message_id)) throw new Error('CASHLY_OUTBOX_SCOPE_MISMATCH');\nreturn {json: {\n  has_claim: true, config: request.config,\n  event: {bot_id: value.bot_id, sender_id: value.sender_id, message_id: value.message_id, kind: value.kind},\n  admission: {event_id: value.event_id}, reply: value.reply\n}};\n"
+        "jsCode": "const request = $('Siapkan Klaim').item.json;\nconst value = $json.data;\nif (value === null) return {json: {has_claim: false}};\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!value || !uuid.test(value.event_id ?? '') || value.bot_id !== request.config.expected_instance\n  || value.action !== 'reply' || !/^\\d+(?::\\d+)?@(s\\.whatsapp\\.net|lid)$/.test(value.sender_id ?? '')\n  || !uuid.test(value.reply?.id ?? '') || !uuid.test(value.reply?.lease_id ?? '')\n  || typeof value.reply.text !== 'string' || !value.reply.text.trim() || value.reply.text.length > 4000) {\n  throw new Error('CASHLY_OUTBOX_CLAIM_INVALID');\n}\nif (request.requested_reply_id && (request.requested_reply_id !== value.reply.id\n  || request.expected_event?.sender_id !== value.sender_id\n  || request.expected_event?.message_id !== value.message_id)) throw new Error('CASHLY_OUTBOX_SCOPE_MISMATCH');\nif (value.reply.report_pdf === true && value.verified_link !== true) throw new Error('CASHLY_REPORT_SCOPE_MISMATCH');\nreturn {json: {\n  has_claim: true, config: request.config,\n  event: {bot_id: value.bot_id, sender_id: value.sender_id, message_id: value.message_id, kind: value.kind},\n  admission: {event_id: value.event_id}, reply: value.reply\n}};\n"
       },
       "position": [
         4320,
@@ -897,6 +897,130 @@
         720,
         1260
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.reply.report_pdf === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a23f5cd4-7cc4-457d-aa60-ef12e0a1c992",
+      "name": "Balasan Minta PDF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        5035,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.config.backend_base_url + '/api/v1/integrations/whatsapp/outbox/' + $json.reply.id + '/report-pdf' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Cashly-Report-Lease",
+              "value": "={{ $json.reply.lease_id }}"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 75000
+        }
+      },
+      "id": "f33ee6e2-4cc7-40b5-9393-9d35bad16acb",
+      "name": "Render Laporan PDF Cashly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        5260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ typeof $json.data?.media === 'string' && $json.data.media.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d91ae299-f976-4bbe-a8f0-5c470e51c575",
+      "name": "PDF Cashly Siap",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        5490,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-document",
+        "instanceName": "={{ $('Balasan yang Diklaim').item.json.event.bot_id }}",
+        "remoteJid": "={{ $('Balasan yang Diklaim').item.json.event.sender_id }}",
+        "media": "={{ $json.data.media }}",
+        "fileName": "={{ $json.data.file_name }}",
+        "caption": "={{ $('Balasan yang Diklaim').item.json.reply.text }}"
+      },
+      "id": "5840a996-c71d-4c62-ba6f-e274d7d37afc",
+      "name": "Kirim PDF WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        5720,
+        0
+      ],
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -1257,7 +1381,7 @@
       "main": [
         [
           {
-            "node": "Kirim Balasan WhatsApp",
+            "node": "Balasan Minta PDF",
             "type": "main",
             "index": 0
           }
@@ -1298,6 +1422,64 @@
         [
           {
             "node": "Recovery Belum Siap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Balasan Minta PDF": {
+      "main": [
+        [
+          {
+            "node": "Render Laporan PDF Cashly",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Kirim Balasan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Laporan PDF Cashly": {
+      "main": [
+        [
+          {
+            "node": "PDF Cashly Siap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF Cashly Siap": {
+      "main": [
+        [
+          {
+            "node": "Kirim PDF WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Kirim Balasan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim PDF WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Siapkan Status Pengiriman",
             "type": "main",
             "index": 0
           }
@@ -1359,7 +1541,11 @@
         "Validasi Klaim Outbox",
         "Ada Klaim Balasan",
         "Balasan yang Diklaim",
-        "Outbox Kosong"
+        "Outbox Kosong",
+        "Balasan Minta PDF",
+        "Render Laporan PDF Cashly",
+        "PDF Cashly Siap",
+        "Kirim PDF WhatsApp"
       ],
       "description": "Kirim hasil ke chat asal dan laporkan status pengiriman tanpa mengulangi penyimpanan transaksi."
     },
