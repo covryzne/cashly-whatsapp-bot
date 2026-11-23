@@ -1,4 +1,4 @@
-name: cashly-whatsapp-staging
+name: cashly-whatsapp
 
 x-logging: &bounded-logging
   driver: json-file
@@ -23,7 +23,7 @@ services:
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD:?Generate POSTGRES_PASSWORD in .env}@evolution-postgres:5432/evolution?schema=public
-      DATABASE_CONNECTION_CLIENT_NAME: cashly-staging
+      DATABASE_CONNECTION_CLIENT_NAME: cashly-whatsapp
       DATABASE_SAVE_DATA_INSTANCE: "true"
       DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
       DATABASE_SAVE_MESSAGE_UPDATE: "false"
@@ -33,7 +33,7 @@ services:
       DATABASE_SAVE_DATA_HISTORIC: "false"
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://evolution-redis:6379/0
-      CACHE_REDIS_PREFIX_KEY: cashly-staging
+      CACHE_REDIS_PREFIX_KEY: cashly-whatsapp
       CACHE_REDIS_SAVE_INSTANCES: "false"
       CACHE_LOCAL_ENABLED: "false"
       DEL_INSTANCE: "false"

@@ -1,4 +1,4 @@
-# Evolution API untuk bot Cashly staging
+# Evolution API untuk Cashly staging dan production
 
 Status: konfigurasi persiapan lokal, belum di-deploy atau diuji dengan WhatsApp.
 Ini menyiapkan transport WhatsApp; belum memasang workflow bot, endpoint linking,
@@ -9,9 +9,10 @@ OTP, atau adapter integrasi backend Cashly.
 - `cashly-evolution`: Evolution API `v2.3.7`, maksimum RAM 1536 MiB.
 - `evolution-postgres`: PostgreSQL 15 Alpine, maksimum RAM 384 MiB.
 - `evolution-redis`: Redis 7 Alpine, maksimum RAM 128 MiB.
-- API terhubung ke network `n8n_default` yang sudah ada. n8n memanggil
-  `http://cashly-evolution:8080`. n8n tetap mengakses Cashly melalui
-  `http://backend:8000` di network `cashly-staging`.
+- API terhubung ke network `n8n_default` yang sudah ada. Kedua workflow n8n
+  memanggil `http://cashly-evolution:8080` dan memakai instance masing-masing.
+  Workflow staging dan production memakai alamat backend Cashly yang unik pada
+  network `cashly-staging` dan `cashly-prod`.
 - PostgreSQL dan Redis hanya terhubung ke network internal stack ini. Database
   Evolution terpisah dari database finansial Cashly.
 - Manager/API hanya dipublikasikan di host `127.0.0.1:8085`, melalui SSH tunnel
@@ -37,8 +38,9 @@ ss -ltn 'sport = :8085'
 df -h /
 ```
 
-Pastikan port 8085 belum digunakan. Periksa lagi ruang disk sesudah image pull;
-data database dan sesi akan bertambah seiring pemakaian.
+Pastikan port 8085 tersedia. Jika masih dipakai Evolution lama di server ini,
+ikuti langkah pindah project di bawah. Periksa lagi ruang disk sesudah image
+pull karena data database dan sesi akan bertambah seiring pemakaian.
 
 ## 2. Buat credential sekali
 
@@ -97,10 +99,10 @@ Pertahankan terminal tunnel, buka `http://localhost:8085/manager`, lalu gunakan
 server URL `http://localhost:8085` dan API key dari `.env` lokal server melalui
 editor privat. Jangan membagikan nilainya.
 
-Buat instance `cashly-staging` dengan koneksi WhatsApp Baileys dan scan QR lewat
-WhatsApp Business nomor bot. Biarkan webhook/integrasi chatbot nonaktif untuk
-pairing awal. Nomor bot terhubung ke Evolution berbeda dari user Cashly yang
-nantinya menautkan akun melalui OTP.
+Buat instance `cashly-staging` dan `cashly-prod` dengan koneksi WhatsApp Baileys
+dan scan QR lewat WhatsApp Business. Gunakan nomor tes dan nomor publik yang
+berbeda jika kedua instance akan aktif bersamaan. Pasang webhook masing-masing
+ke workflow yang sesuai setelah pairing berhasil.
 
 Jika `/manager` tidak termuat, verifikasi image/asset Manager dan versi runtime;
 jangan membuka port publik untuk mengatasi masalah asset. Konfigurasi ini
@@ -112,7 +114,7 @@ Pada credential community node `n8n-nodes-evolution-api`:
 
 - Server URL: `http://cashly-evolution:8080` (tanpa slash akhir).
 - ApiKey: key Evolution dari `.env`, simpan di credential store n8n.
-- Instance pada node: `cashly-staging`.
+- Instance pada node mengikuti workflow: `cashly-staging` atau `cashly-prod`.
 
 Uji jaringan dari Azure:
 
@@ -123,6 +125,31 @@ docker exec n8n node -e "fetch('http://cashly-evolution:8080/',{signal:AbortSign
 Gunakan tes credential n8n untuk memeriksa autentikasi. Uji outbound memakai
 workflow manual dan nomor penguji yang berbeda dari nomor bot. Jangan arahkan
 pesan ke workflow finansial live sebelum flow gate akun dan dedup siap.
+
+## Pindah dari project lama
+
+Project `cashly-whatsapp` membuka tiga volume baru untuk Evolution, PostgreSQL,
+dan Redis. Instance dibuat dan dipasangkan ulang di Manager. Volume
+`cashly-whatsapp-staging_*` tetap menyimpan data lama selama perpindahan.
+Gunakan `.env` yang sudah ada jika ingin mempertahankan API key Evolution.
+
+Untuk pindah, validasi konfigurasi baru, stop project lama, lalu jalankan yang
+baru. Selama perpindahan, nomor yang terhubung ke stack lama berhenti melayani.
+
+```bash
+docker compose -p cashly-whatsapp config --quiet \
+  && docker compose -p cashly-whatsapp-staging stop \
+  && docker compose -p cashly-whatsapp up -d --wait
+docker compose -p cashly-whatsapp ps
+```
+
+Untuk kembali ke stack lama, stop project baru lalu start container lama.
+Instance yang baru dipasangkan juga perlu diperiksa kembali di WhatsApp.
+
+```bash
+docker compose -p cashly-whatsapp stop \
+  && docker compose -p cashly-whatsapp-staging start
+```
 
 ## Tahap berikutnya
 

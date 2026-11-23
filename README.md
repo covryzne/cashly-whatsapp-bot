@@ -54,11 +54,10 @@ Ikuti [setup Evolution](docs/setup-evolution.md) untuk membuat `.env` privat,
 memeriksa network/port, menarik image, menjalankan stack, dan pairing nomor bot.
 Jangan menjalankan stack sebelum `.env` disiapkan.
 
-Jika sudah membuat stack dari folder `~/ai-lab/evolution`, gunakan nama project
-tetap `cashly-whatsapp-staging` dan file `.env` yang sama saat beralih ke checkout
-ini. Volume mengikuti nama project, bukan nama folder. Jangan menjalankan kedua
-checkout bersamaan; periksa `docker compose ls` dan pindahkan pengelolaan ke satu
-folder. Memindahkan repo tidak memindahkan atau mencadangkan volume secara otomatis.
+Project `cashly-whatsapp` melayani instance `cashly-staging` dan `cashly-prod`.
+Jika server masih menjalankan project lama `cashly-whatsapp-staging`, ikuti
+[langkah pindah ke stack baru](docs/setup-evolution.md#pindah-dari-project-lama).
+Stack baru memakai volume sendiri dan instance perlu dipasangkan ulang.
 
 Network yang diperlukan:
 
